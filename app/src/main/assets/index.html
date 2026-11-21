@@ -83,6 +83,7 @@ h2{font-size:18px;font-weight:700;margin:24px 0 10px}
 .skel.c{width:138px;height:175px;flex:none}
 @keyframes sk{to{background-position:-200% 0}}
 .live{font-size:10px;font-weight:800;background:#E53935;color:#fff;padding:2px 6px;border-radius:4px;margin-right:6px;vertical-align:1px}
+.srcT{font-size:9.5px;font-weight:700;color:#B9A8FF;background:rgba(139,108,255,.15);padding:1px 5px;border-radius:4px;margin-right:6px;vertical-align:1px}
 .hq{font-size:10px;font-weight:800;border:1px solid var(--mut);color:var(--mut);padding:1px 5px;border-radius:4px;margin-right:6px;vertical-align:1px}
 
 /* nav */
@@ -176,6 +177,11 @@ nav button.on{color:var(--tx)}
     </div>
     <h2>Trending this week</h2>
     <div class="row" id="trendRow"></div>
+    <h2>Discover free music <span class="sub" style="font-weight:500">· Jamendo &amp; more</span></h2>
+    <div class="row" id="discRow"></div>
+    <h2>Live concerts &amp; albums <span class="sub" style="font-weight:500">· Internet Archive</span></h2>
+    <div class="row" id="iaRow"></div>
+
     <h2 id="genreTitle">Top tracks</h2>
     <div class="chips" id="genres" style="margin-bottom:6px"></div>
     <div class="list" id="genreList"></div>
@@ -199,6 +205,7 @@ nav button.on{color:var(--tx)}
     <div id="sRes" style="display:none">
       <div id="sArtistsWrap"><h2>Artists</h2><div class="row" id="sArtists"></div></div>
       <h2>Songs</h2><div class="list" id="sSongs"></div>
+      <div id="sAlbumsWrap"><h2>Albums &amp; concerts</h2><div class="row" id="sAlbums"></div></div>
       <h2>Radio stations</h2><div class="list" id="sRadio"></div>
     </div>
   </section>
@@ -251,7 +258,7 @@ nav button.on{color:var(--tx)}
   <div class="setrow"><span class="l">Version</span><span class="r" id="setVer"></span></div>
   <button class="setrow" data-act="clearCache"><span class="l">Refresh music lists</span><span class="r">Clear saved lists</span></button>
   <button class="setrow" data-act="clearRecent"><span class="l">Clear recently played</span><span class="r">›</span></button>
-  <div class="setrow" style="display:block"><div class="l">About</div><div class="r" style="margin-top:4px;line-height:1.5">Tarang plays free music from Audius, live radio from Radio Browser, and music files on your phone. FLAC and WAV files play in full lossless quality.</div></div>
+  <div class="setrow" style="display:block"><div class="l">About</div><div class="r" style="margin-top:4px;line-height:1.5">Tarang plays free, legal music from Audius, Jamendo, ccMixter, Wikimedia and the Internet Archive (albums and live concerts), live radio from Radio Browser, and music files on your phone. FLAC and WAV files play in full lossless quality.</div></div>
 </div>
 
 <!-- MINI PLAYER -->
@@ -312,7 +319,7 @@ nav button.on{color:var(--tx)}
 
 <script>
 "use strict";
-const UI_VERSION = 3;
+const UI_VERSION = 4;
 /* ================= helpers ================= */
 const $ = id => document.getElementById(id);
 const AUD = "https://api.audius.co/v1";
@@ -394,7 +401,8 @@ function artHTML(t){
   return `<div class="art"><div class="ph">${letter}</div>${img}</div>`;
 }
 const isLiked = id => liked.some(x=>x.id===id) || stations.some(x=>x.id===id);
-const badge = t => t.src==="radio" ? '<span class="live">LIVE</span>' : (t.src==="local" ? '<span class="hq">FILE</span>' : "");
+const SRC_LABEL = {jamendo:"Jamendo", ccmixter:"ccMixter", wikimedia_audio:"Wikimedia", archive:"Archive"};
+const badge = t => t.src==="radio" ? '<span class="live">LIVE</span>' : (t.src==="local" ? '<span class="hq">FILE</span>' : (SRC_LABEL[t.src] ? `<span class="srcT">${SRC_LABEL[t.src]}</span>` : ""));
 
 function renderList(el, tracks, opts={}){
   if (!tracks.length){ el.innerHTML = `<div class="empty">${opts.empty || "Nothing here yet."}</div>`; return; }
@@ -624,6 +632,7 @@ document.addEventListener("click", e => {
     case "installApk": startApkInstall(); break;
     case "applyUi": applyUi(+el.dataset.v); break;
     case "clearCache": Object.keys(localStorage).filter(k=>k.startsWith("c:")).forEach(k=>localStorage.removeItem(k)); for (const k in memCache) delete memCache[k]; toast("Lists will refresh"); loadTrending(); loadGenre(); $("radioList").dataset.loaded=""; break;
+    case "album": openAlbum(el.dataset.ident, el.dataset.name); break;
     case "artist": openArtist(el.dataset.uid, el.dataset.name); break;
     case "playShuf": { const l = lists.get(el.dataset.k); if (l){ const d=l.slice(); for (let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } playTracks(d,0); } break; }
     case "redo": $("q").value = el.dataset.q; doSearch(); break;
@@ -722,15 +731,91 @@ function queryVariants(q){
   if (toks.length === 1 && toks[0].length >= 5) v.push(toks[0].slice(0, Math.ceil(toks[0].length*0.6)));
   return [...new Set(v.filter(Boolean))].slice(0, 6);
 }
+/* ---------- extra free catalogues ---------- */
+const OV = "https://api.openverse.org/v1/audio/";
+const OV_SRC = "jamendo,ccmixter,wikimedia_audio";
+function fromOpenverse(r){
+  return { id:"ov:"+r.id, title:(r.title||"Untitled").replace(/\.(mp3|ogg|wav|flac)$/i,""), artist:r.creator||"",
+    art:r.thumbnail||"", url:r.url, src:r.source||"jamendo", dur:r.duration||0 };
+}
+async function ovSearch(q, size=20){
+  const j = await getJSON(`${OV}?q=${encodeURIComponent(q)}&category=music&source=${OV_SRC}&page_size=${size}&mature=false`, 12000);
+  return (j.results||[]).filter(r=>r.url && /^https?:/.test(r.url)).map(fromOpenverse);
+}
+const IA_FILTER = "mediatype:audio AND (collection:etree OR licenseurl:*creativecommons.org* OR licenseurl:*publicdomain*)";
+function fromIA(d){
+  const c = Array.isArray(d.creator) ? d.creator[0] : (d.creator||"");
+  const t = Array.isArray(d.title) ? d.title[0] : (d.title||d.identifier);
+  return { id:"ia:"+d.identifier, ident:d.identifier, title:t, artist:c, art:`https://archive.org/services/img/${encodeURIComponent(d.identifier)}` };
+}
+async function iaSearch(q, rows=20, sort="downloads desc"){
+  const query = q ? `(${q}) AND ${IA_FILTER}` : IA_FILTER;
+  const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=downloads&sort[]=${encodeURIComponent(sort)}&rows=${rows}&output=json`;
+  const j = await getJSON(url, 15000);
+  return ((j.response||{}).docs||[]).map(fromIA);
+}
+function albumCards(el, albums){
+  if (!albums.length){ el.innerHTML = '<div class="empty" style="width:100%">Nothing to show.</div>'; return; }
+  el.innerHTML = albums.map(a => `<div class="card press" data-act="album" data-ident="${esc(a.ident)}" data-name="${esc(a.title)}">${artHTML(a)}<div class="t">${esc(a.title)}</div><div class="a">${esc(a.artist)}</div></div>`).join("");
+}
+async function openAlbum(ident, name){
+  libOpen = null;
+  $("libTitle").textContent = name; $("libBtns").innerHTML = ""; skelList($("libList"), 8);
+  if (openPageId !== "libPage") openPage("libPage");
+  try {
+    const m = await getJSON(`https://archive.org/metadata/${encodeURIComponent(ident)}`, 15000);
+    const md = m.metadata || {};
+    const artist = Array.isArray(md.creator) ? md.creator[0] : (md.creator || "");
+    const files = (m.files||[]);
+    // best quality that still streams smoothly: 320k / VBR MP3, then Ogg, then FLAC
+    const pref = ["VBR MP3","320Kbps MP3","MP3","256Kbps MP3","Ogg Vorbis","Flac","24bit Flac"];
+    let best = null;
+    for (const f of pref){ const got = files.filter(x=>x.format===f); if (got.length){ best = got; break; } }
+    if (!best) best = files.filter(x=>/\.(mp3|ogg|flac)$/i.test(x.name||""));
+    best.sort((a,b)=> (parseInt(a.track)||0)-(parseInt(b.track)||0) || String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
+    const art = `https://archive.org/services/img/${encodeURIComponent(ident)}`;
+    const d = best.map((f,i)=>({ id:`ia:${ident}/${f.name}`, title:(f.title || f.name.replace(/\.[^.]+$/,"").replace(/[_]+/g," ")),
+      artist:f.creator || artist, art, src:"archive", dur:Math.round((parseFloat(f.length)||0)*1000) || 0,
+      url:`https://archive.org/download/${encodeURIComponent(ident)}/${f.name.split("/").map(encodeURIComponent).join("/")}` }));
+    if (d.length){
+      const k = regList(d);
+      $("libBtns").innerHTML = `<button class="btn press" data-act="play" data-k="${k}" data-i="0">▶ Play all</button><button class="btn sec press" data-act="playShuf" data-k="${k}">⤨ Shuffle</button>`;
+    }
+    renderList($("libList"), d, {empty:"No playable tracks in this album."});
+  } catch(e){ $("libList").innerHTML = '<div class="empty">Couldn\'t open this album.</div>'; }
+}
+async function loadDiscover(){
+  const el = $("discRow"); if (!memCache.disc) skelRow(el);
+  try {
+    const pick = ["chill","acoustic","piano","lofi","indian","electronic","jazz","pop"][new Date().getDate() % 8];
+    const d = await cached("disc", 360, () => ovSearch(pick, 20));
+    renderRow(el, d);
+  } catch(e){ el.innerHTML = '<div class="empty" style="width:100%">Couldn\'t load right now.</div>'; }
+}
+async function loadIA(){
+  const el = $("iaRow"); if (!memCache.ia) skelRow(el);
+  try { albumCards(el, await cached("ia", 720, () => iaSearch("", 20))); }
+  catch(e){ el.innerHTML = '<div class="empty" style="width:100%">Couldn\'t load right now.</div>'; }
+}
+async function fuzzyAlbums(q){
+  const toks = qTokens(q), clean = toks.join(" ") || q;
+  const words = clean.split(" ").map(w=>w.replace(/[^\p{L}\p{N}]/gu,"")).filter(Boolean);
+  if (!words.length) return [];
+  const res = await iaSearch(words.map(w=>`${w}*`).join(" AND "), 20).catch(()=>[]);
+  return res.map(a=>({a, s:fuzzyScore(q, toks, a.title, a.artist, 0)})).filter(x=>x.s>0.3).sort((x,y)=>y.s-x.s).slice(0,15).map(x=>x.a);
+}
 async function fuzzySongs(q){
   const toks = qTokens(q), vars = queryVariants(q);
   const reqs = vars.map(v => getJSON(`${AUD}/tracks/search?query=${encodeURIComponent(v)}&limit=25&${APP}`).then(j=>j.data||[]).catch(()=>[]));
-  const results = await Promise.all(reqs);
+  const ovVars = [...new Set([q.trim(), toks.join(" ")].filter(Boolean))];
+  const ovReqs = ovVars.map(v => ovSearch(v, 20).catch(()=>[]));
+  const [results, ovRes] = await Promise.all([Promise.all(reqs), Promise.all(ovReqs)]);
   const seen = new Map();
-  results.flat().forEach(t => { if (t && t.id && !seen.has(t.id)) seen.set(t.id, t); });
+  results.flat().forEach(t => { if (t && t.id && !seen.has("au:"+t.id)) seen.set("au:"+t.id, {tr:fromAudius(t), pop:t.play_count||0}); });
+  ovRes.flat().forEach(t => { if (!seen.has(t.id)) seen.set(t.id, {tr:t, pop:0}); });
   return [...seen.values()]
-    .map(t => ({t, s:fuzzyScore(q, toks, t.title, t.user ? t.user.name : "", t.play_count)}))
-    .filter(x => x.s > 0.3).sort((a,b)=>b.s-a.s).slice(0, 40).map(x=>fromAudius(x.t));
+    .map(x => ({t:x.tr, s:fuzzyScore(q, toks, x.tr.title, x.tr.artist, x.pop)}))
+    .filter(x => x.s > 0.3).sort((a,b)=>b.s-a.s).slice(0, 60).map(x=>x.t);
 }
 async function fuzzyArtists(q){
   const toks = qTokens(q);
@@ -799,6 +884,8 @@ function doSearch(){
   skelList($("sSongs"), 5); skelList($("sRadio"), 3); skelRow($("sArtists"), 3); $("sArtistsWrap").style.display = "";
   fuzzySongs(q).then(d=>{ if(my===searchSeq){ renderList($("sSongs"), d, {empty:"No songs found. Try fewer or different words."}); if (d.length) rememberSearchSoon(q); } })
     .catch(()=>{ if(my===searchSeq) $("sSongs").innerHTML='<div class="empty">Song search failed. Check internet.</div>'; });
+  skelRow($("sAlbums"), 3); $("sAlbumsWrap").style.display = "";
+  fuzzyAlbums(q).then(a=>{ if(my===searchSeq){ if (a.length) albumCards($("sAlbums"), a); else $("sAlbumsWrap").style.display="none"; } }).catch(()=>{ if(my===searchSeq) $("sAlbumsWrap").style.display="none"; });
   fuzzyArtists(q).then(u=>{ if(my===searchSeq) artistCards($("sArtists"), u); }).catch(()=>{ if(my===searchSeq) $("sArtistsWrap").style.display="none"; });
   fuzzyStations(q).then(d=>{ if(my===searchSeq) renderList($("sRadio"), d, {empty:"No stations found."}); })
     .catch(()=>{ if(my===searchSeq) $("sRadio").innerHTML='<div class="empty">Radio search failed.</div>'; });
@@ -905,7 +992,7 @@ function checkCrash(){
 /* ================= start ================= */
 greet(); renderGenres(); renderLangs(); updateLibCounts(); renderRecentRow();
 $("verLine").textContent = "Check for updates";
-loadTrending(); loadGenre();
+loadTrending(); loadGenre(); loadDiscover(); loadIA();
 nat("ready");
 setTimeout(checkCrash, 600);
 setTimeout(() => nat("checkUpdate", false), 2500);

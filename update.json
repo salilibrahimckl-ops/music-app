@@ -1,5 +1,5 @@
 {
-  "ui": 3,
+  "ui": 4,
   "apk": 2,
-  "notes": "Smarter search: finds songs even with typos, partial names or extra words. Also shows artists."
+  "notes": "Many more songs: Jamendo, ccMixter, Wikimedia music, plus full albums and live concerts from the Internet Archive."
 }
