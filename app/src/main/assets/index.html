@@ -189,10 +189,15 @@ nav button.on{color:var(--tx)}
       <input id="q" type="search" placeholder="Songs, artists, radio stations" autocomplete="off" enterkeyhint="search">
     </form>
     <div id="sBrowse">
+      <div id="recentSearchWrap" style="display:none">
+        <h2>Recent searches</h2>
+        <div class="chips" id="recentSearches" style="flex-wrap:wrap"></div>
+      </div>
       <h2>Browse</h2>
       <div class="grid" id="browse"></div>
     </div>
     <div id="sRes" style="display:none">
+      <div id="sArtistsWrap"><h2>Artists</h2><div class="row" id="sArtists"></div></div>
       <h2>Songs</h2><div class="list" id="sSongs"></div>
       <h2>Radio stations</h2><div class="list" id="sRadio"></div>
     </div>
@@ -307,7 +312,7 @@ nav button.on{color:var(--tx)}
 
 <script>
 "use strict";
-const UI_VERSION = 2;
+const UI_VERSION = 3;
 /* ================= helpers ================= */
 const $ = id => document.getElementById(id);
 const AUD = "https://api.audius.co/v1";
@@ -619,6 +624,9 @@ document.addEventListener("click", e => {
     case "installApk": startApkInstall(); break;
     case "applyUi": applyUi(+el.dataset.v); break;
     case "clearCache": Object.keys(localStorage).filter(k=>k.startsWith("c:")).forEach(k=>localStorage.removeItem(k)); for (const k in memCache) delete memCache[k]; toast("Lists will refresh"); loadTrending(); loadGenre(); $("radioList").dataset.loaded=""; break;
+    case "artist": openArtist(el.dataset.uid, el.dataset.name); break;
+    case "playShuf": { const l = lists.get(el.dataset.k); if (l){ const d=l.slice(); for (let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } playTracks(d,0); } break; }
+    case "redo": $("q").value = el.dataset.q; doSearch(); break;
     case "clearRecent": recent = []; save("recent", recent); renderRecentRow(); toast("Cleared"); break;
   }
 });
@@ -663,22 +671,140 @@ function browseGo(k){
   if (["malayalam","quran","hindi","arabic","tamil"].includes(k)){ curLang=k; renderLangs(); $("radioList").dataset.loaded=""; show("radio"); }
   else { curGenre=k; renderGenres(); loadGenre(); show("home"); setTimeout(()=>$("genreTitle").scrollIntoView({behavior:"smooth"}), 50); }
 }
+/* ---------- forgiving (fuzzy) search ---------- */
+const STOP = new Set(["song","songs","lyrics","lyric","by","the","a","an","of","music","video","audio","official","full","new","latest","track","play","mp3","hd","ft","feat","and","from","movie","film"]);
+function norm(s){
+  return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^\p{L}\p{N}]+/gu," ").replace(/\s+/g," ").trim();
+}
+function qTokens(q){ const t = norm(q).split(" ").filter(Boolean); const k = t.filter(w=>!STOP.has(w)); return k.length ? k : t; }
+function lev(a, b){
+  if (a===b) return 0; if (!a.length) return b.length; if (!b.length) return a.length;
+  let prev = Array.from({length:b.length+1}, (_,i)=>i);
+  for (let i=1;i<=a.length;i++){
+    const cur=[i];
+    for (let j=1;j<=b.length;j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function wordSim(q, w){
+  if (q===w) return 1;
+  if (w.startsWith(q) || q.startsWith(w)) return Math.min(q.length,w.length) >= 3 ? 0.85 : 0.5;
+  if (w.includes(q) && q.length >= 3) return 0.7;
+  const d = lev(q, w), m = Math.max(q.length, w.length);
+  const s = 1 - d/m; return s >= 0.55 ? s : 0;
+}
+function grams(s){ s = " "+s.replace(/ /g,"")+" "; const g=new Set(); for(let i=0;i<s.length-2;i++) g.add(s.slice(i,i+3)); return g; }
+function gramSim(a, b){ const A=grams(a), B=grams(b); if(!A.size||!B.size) return 0; let n=0; A.forEach(x=>{ if(B.has(x)) n++; }); return n/(A.size+B.size-n); }
+function fuzzyScore(query, toks, title, artist, pop){
+  const nt = norm(title), na = norm(artist), all = (nt+" "+na).trim();
+  const words = all.split(" ").filter(Boolean);
+  let tok = 0;
+  for (const q of toks){ let best = 0; for (const w of words){ const s = wordSim(q, w); if (s > best) best = s; if (best===1) break; } tok += best; }
+  tok = toks.length ? tok / toks.length : 0;
+  const nq = toks.join(" ");
+  const gram = Math.max(gramSim(nq, nt), gramSim(nq, all) * 0.9);
+  let score = Math.max(tok, gram);
+  if (nq && all.includes(nq)) score += 0.5;
+  if (nq && nt.startsWith(nq)) score += 0.2;
+  score += Math.log10((pop||0)+1) / 25;
+  return score;
+}
+function queryVariants(q){
+  const raw = q.trim(), toks = qTokens(q), clean = toks.join(" ");
+  const v = [raw];
+  if (clean && clean !== norm(raw)) v.push(clean);
+  if (toks.length > 1){
+    [...toks].sort((a,b)=>b.length-a.length).slice(0,3).forEach(t=>{ if (t.length>=3) v.push(t); });
+    v.push(toks.slice(0,-1).join(" "));
+  }
+  if (toks.length === 1 && toks[0].length >= 5) v.push(toks[0].slice(0, Math.ceil(toks[0].length*0.6)));
+  return [...new Set(v.filter(Boolean))].slice(0, 6);
+}
+async function fuzzySongs(q){
+  const toks = qTokens(q), vars = queryVariants(q);
+  const reqs = vars.map(v => getJSON(`${AUD}/tracks/search?query=${encodeURIComponent(v)}&limit=25&${APP}`).then(j=>j.data||[]).catch(()=>[]));
+  const results = await Promise.all(reqs);
+  const seen = new Map();
+  results.flat().forEach(t => { if (t && t.id && !seen.has(t.id)) seen.set(t.id, t); });
+  return [...seen.values()]
+    .map(t => ({t, s:fuzzyScore(q, toks, t.title, t.user ? t.user.name : "", t.play_count)}))
+    .filter(x => x.s > 0.3).sort((a,b)=>b.s-a.s).slice(0, 40).map(x=>fromAudius(x.t));
+}
+async function fuzzyArtists(q){
+  const toks = qTokens(q);
+  const tries = [q.trim(), toks.join(" ")].filter((v,i,a)=>v && a.indexOf(v)===i);
+  const res = await Promise.all(tries.map(v => getJSON(`${AUD}/users/search?query=${encodeURIComponent(v)}&limit=10&${APP}`).then(j=>j.data||[]).catch(()=>[])));
+  const seen = new Map(); res.flat().forEach(u => { if (u && u.id && !seen.has(u.id)) seen.set(u.id, u); });
+  return [...seen.values()]
+    .map(u => ({u, s:fuzzyScore(q, toks, u.name, u.handle, u.follower_count)}))
+    .filter(x => x.s > 0.55 && (x.u.track_count||0) > 0).sort((a,b)=>b.s-a.s).slice(0, 8).map(x=>x.u);
+}
+async function fuzzyStations(q){
+  const toks = qTokens(q), clean = toks.join(" ");
+  const base = "limit=25&hidebroken=true&order=clickcount&reverse=true";
+  const paths = [`stations/search?name=${encodeURIComponent(q.trim())}&${base}`];
+  if (clean && clean !== norm(q)) paths.push(`stations/search?name=${encodeURIComponent(clean)}&${base}`);
+  paths.push(`stations/search?tag=${encodeURIComponent(clean || q.trim())}&${base}`);
+  if (toks.length > 1) paths.push(`stations/search?name=${encodeURIComponent([...toks].sort((a,b)=>b.length-a.length)[0])}&${base}`);
+  const res = await Promise.all(paths.map(p => rb(p).catch(()=>[])));
+  const seen = new Map(); res.flat().forEach(s => { if (s && s.stationuuid && (s.url_resolved||s.url) && !seen.has(s.stationuuid)) seen.set(s.stationuuid, s); });
+  return [...seen.values()]
+    .map(s => ({s, sc:fuzzyScore(q, toks, s.name, (s.tags||"")+" "+(s.language||""), s.clickcount)}))
+    .filter(x => x.sc > 0.3).sort((a,b)=>b.sc-a.sc).slice(0, 25).map(x=>fromStation(x.s));
+}
+function artistCards(el, users){
+  if (!users.length){ $("sArtistsWrap").style.display = "none"; return; }
+  $("sArtistsWrap").style.display = "";
+  el.innerHTML = users.map(u => {
+    const pic = u.profile_picture ? (u.profile_picture["480x480"] || u.profile_picture["150x150"] || "") : "";
+    const t = {title:u.name, art:pic};
+    return `<div class="card press" style="width:110px;text-align:center" data-act="artist" data-uid="${esc(u.id)}" data-name="${esc(u.name)}"><div style="width:110px;height:110px;border-radius:50%;overflow:hidden">${artHTML(t).replace('class="art"','class="art" style="width:110px;height:110px"')}</div><div class="t">${esc(u.name)}</div><div class="a">${u.track_count||0} songs</div></div>`;
+  }).join("");
+}
+async function openArtist(uid, name){
+  libOpen = null;
+  $("libTitle").textContent = name; $("libBtns").innerHTML = ""; skelList($("libList"), 6);
+  if (openPageId !== "libPage") openPage("libPage");
+  try {
+    const j = await getJSON(`${AUD}/users/${encodeURIComponent(uid)}/tracks?limit=50&sort=plays&${APP}`);
+    const d = (j.data||[]).map(fromAudius);
+    if (d.length){
+      const k = regList(d);
+      $("libBtns").innerHTML = `<button class="btn press" data-act="play" data-k="${k}" data-i="0">▶ Play</button><button class="btn sec press" data-act="playShuf" data-k="${k}">⤨ Shuffle</button>`;
+    }
+    renderList($("libList"), d, {empty:"No songs from this artist."});
+  } catch(e){ $("libList").innerHTML = '<div class="empty">Couldn\'t load this artist.</div>'; }
+}
+let recentSearches = load("recentSearches", []);
+function renderRecentSearches(){
+  $("recentSearchWrap").style.display = recentSearches.length ? "" : "none";
+  $("recentSearches").innerHTML = recentSearches.map(s=>`<button class="chip" data-act="redo" data-q="${esc(s)}">${esc(s)}</button>`).join("");
+}
+function rememberSearch(q){
+  q = q.trim(); if (q.length < 2) return;
+  recentSearches = [q, ...recentSearches.filter(x=>x.toLowerCase()!==q.toLowerCase())].slice(0, 10);
+  save("recentSearches", recentSearches); renderRecentSearches();
+}
 let sTimer, searchSeq = 0;
-$("q").addEventListener("input", ()=>{ clearTimeout(sTimer); sTimer=setTimeout(doSearch, 500); });
-$("sform").addEventListener("submit", e=>{ e.preventDefault(); $("q").blur(); clearTimeout(sTimer); doSearch(); });
+$("q").addEventListener("input", ()=>{ clearTimeout(sTimer); sTimer=setTimeout(doSearch, 450); });
+$("sform").addEventListener("submit", e=>{ e.preventDefault(); $("q").blur(); clearTimeout(sTimer); doSearch(); rememberSearch($("q").value); });
 function doSearch(){
   const q = $("q").value.trim();
-  $("sBrowse").style.display = q ? "none" : ""; $("sRes").style.display = q ? "" : "none";
-  if (!q) return;
+  const active = q.length >= 2;
+  $("sBrowse").style.display = active ? "none" : ""; $("sRes").style.display = active ? "" : "none";
+  if (!active) return;
   const my = ++searchSeq;
-  skelList($("sSongs"), 4); skelList($("sRadio"), 3);
-  getJSON(`${AUD}/tracks/search?query=${encodeURIComponent(q)}&limit=30&${APP}`)
-    .then(j=>{ if(my===searchSeq) renderList($("sSongs"), (j.data||[]).map(fromAudius), {empty:"No songs found."}); })
+  skelList($("sSongs"), 5); skelList($("sRadio"), 3); skelRow($("sArtists"), 3); $("sArtistsWrap").style.display = "";
+  fuzzySongs(q).then(d=>{ if(my===searchSeq){ renderList($("sSongs"), d, {empty:"No songs found. Try fewer or different words."}); if (d.length) rememberSearchSoon(q); } })
     .catch(()=>{ if(my===searchSeq) $("sSongs").innerHTML='<div class="empty">Song search failed. Check internet.</div>'; });
-  rb(`stations/search?name=${encodeURIComponent(q)}&limit=20&hidebroken=true&order=clickcount&reverse=true`)
-    .then(j=>{ if(my===searchSeq) renderList($("sRadio"), j.filter(s=>s.url_resolved||s.url).map(fromStation), {empty:"No stations found."}); })
+  fuzzyArtists(q).then(u=>{ if(my===searchSeq) artistCards($("sArtists"), u); }).catch(()=>{ if(my===searchSeq) $("sArtistsWrap").style.display="none"; });
+  fuzzyStations(q).then(d=>{ if(my===searchSeq) renderList($("sRadio"), d, {empty:"No stations found."}); })
     .catch(()=>{ if(my===searchSeq) $("sRadio").innerHTML='<div class="empty">Radio search failed.</div>'; });
 }
+let rsTimer; function rememberSearchSoon(q){ clearTimeout(rsTimer); rsTimer = setTimeout(()=>{ if ($("q").value.trim()===q) rememberSearch(q); }, 2500); }
+renderRecentSearches();
 
 /* ================= radio ================= */
 const LANGS = [["Malayalam","malayalam"],["Quran","quran"],["Hindi","hindi"],["Tamil","tamil"],["Arabic","arabic"],["English","english"],["Telugu","telugu"],["Kannada","kannada"],["Urdu","urdu"],["India top","IN"],["World top","top"]];
