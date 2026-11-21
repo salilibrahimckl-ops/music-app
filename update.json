@@ -1,5 +1,5 @@
 {
-  "ui": 4,
-  "apk": 2,
-  "notes": "Many more songs: Jamendo, ccMixter, Wikimedia music, plus full albums and live concerts from the Internet Archive."
+  "ui": 5,
+  "apk": 3,
+  "notes": "Song suggestions (similar songs, same artist, same album, same year), autoplay, song radio, Play next / Add to queue, and playlists."
 }

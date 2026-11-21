@@ -63,10 +63,11 @@ class MainActivity : ComponentActivity() {
     private val prefs by lazy { getSharedPreferences("tarang", MODE_PRIVATE) }
     private val uiDir by lazy { File(filesDir, "ui").apply { mkdirs() } }
 
+    private var visible = false
     private val ticker = object : Runnable {
         override fun run() {
             pushState()
-            handler.postDelayed(this, 500)
+            handler.postDelayed(this, if (visible) 500 else 2000)
         }
     }
 
@@ -187,6 +188,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        visible = true
+        if (controller != null || controllerFuture != null) {
+            handler.removeCallbacks(ticker); handler.post(ticker)
+            js("window.onAppVisible && onAppVisible(true)")
+            return
+        }
+        connectController()
+    }
+
+    private fun connectController() {
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
         controllerFuture = future
@@ -203,16 +214,17 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        handler.removeCallbacks(ticker)
-        controller?.removeListener(playerListener)
-        controllerFuture?.let { MediaController.releaseFuture(it) }
-        controllerFuture = null
-        controller = null
+        visible = false
+        js("window.onAppVisible && onAppVisible(false)")
         super.onStop()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        controller?.removeListener(playerListener)
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture = null
+        controller = null
         try { web?.destroy() } catch (e: Exception) { }
         web = null
         super.onDestroy()
@@ -424,24 +436,60 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        private fun parseItems(json: String): List<MediaItem> {
+            val arr = JSONArray(json)
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                val url = o.optString("url")
+                if (url.isEmpty()) return@mapNotNull null
+                val meta = MediaMetadata.Builder()
+                    .setTitle(o.optString("title"))
+                    .setArtist(o.optString("artist"))
+                val art = o.optString("art")
+                if (art.startsWith("http")) meta.setArtworkUri(Uri.parse(art))
+                MediaItem.Builder()
+                    .setMediaId(o.optString("id"))
+                    .setUri(url)
+                    .setMediaMetadata(meta.build())
+                    .build()
+            }
+        }
+
+        @JavascriptInterface
+        fun addToQueue(json: String) {
+            handler.post {
+                try {
+                    val items = parseItems(json)
+                    val c = controller ?: return@post
+                    if (items.isEmpty()) return@post
+                    if (c.mediaItemCount == 0) startQueue(items, 0) else c.addMediaItems(items)
+                } catch (e: Exception) { }
+            }
+        }
+
+        @JavascriptInterface
+        fun playNext(json: String) {
+            handler.post {
+                try {
+                    val items = parseItems(json)
+                    val c = controller ?: return@post
+                    if (items.isEmpty()) return@post
+                    if (c.mediaItemCount == 0) startQueue(items, 0)
+                    else c.addMediaItems(minOf(c.currentMediaItemIndex + 1, c.mediaItemCount), items)
+                } catch (e: Exception) { }
+            }
+        }
+
+        @JavascriptInterface
+        fun removeAt(index: Int) {
+            handler.post { controller?.run { if (index in 0 until mediaItemCount && index != currentMediaItemIndex) removeMediaItem(index) } }
+        }
+
         @JavascriptInterface
         fun playQueue(json: String, index: Int) {
             handler.post {
                 try {
-                    val arr = JSONArray(json)
-                    val items = (0 until arr.length()).map { i ->
-                        val o = arr.getJSONObject(i)
-                        val meta = MediaMetadata.Builder()
-                            .setTitle(o.optString("title"))
-                            .setArtist(o.optString("artist"))
-                        val art = o.optString("art")
-                        if (art.startsWith("http")) meta.setArtworkUri(Uri.parse(art))
-                        MediaItem.Builder()
-                            .setMediaId(o.optString("id"))
-                            .setUri(o.getString("url"))
-                            .setMediaMetadata(meta.build())
-                            .build()
-                    }
+                    val items = parseItems(json)
                     if (items.isNotEmpty()) startQueue(items, index)
                 } catch (e: Exception) {
                     js("window.toast && toast('Could not play this')")

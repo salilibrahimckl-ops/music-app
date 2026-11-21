@@ -154,6 +154,16 @@ nav button.on{color:var(--tx)}
 #banner span{flex:1}
 #banner button{background:#fff;color:#111;border-radius:16px;padding:7px 14px;font-weight:700;font-size:13px}
 
+#full{overflow-y:auto}
+#full .player{min-height:calc(100% - 10px);display:flex;flex-direction:column}
+.recsec h2{font-size:16px;margin:20px 0 10px}
+.recsec .card{width:120px}.recsec .card .art{width:120px;height:120px}
+.plrow{display:flex;align-items:center;gap:14px;padding:9px 0;width:100%;text-align:left}
+.plrow .art{width:56px;height:56px;border-radius:8px}
+.menu button{display:flex;align-items:center;gap:14px;width:100%;padding:13px 4px;font-size:15px;font-weight:600;text-align:left}
+.menu button span{width:24px;text-align:center;font-size:18px}
+.sheetin{width:100%;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:16px;outline:0;margin-bottom:12px}
+.mtrack{display:flex;align-items:center;gap:12px;margin-bottom:8px}.mtrack .art{width:48px;height:48px;border-radius:6px}
 #toast{position:fixed;left:50%;bottom:140px;transform:translateX(-50%);background:#fff;color:#111;padding:10px 16px;border-radius:20px;font-size:13px;font-weight:600;opacity:0;transition:opacity .2s;z-index:40;pointer-events:none;max-width:90vw;text-align:center}
 #toast.on{opacity:1}
 
@@ -236,6 +246,9 @@ nav button.on{color:var(--tx)}
       <div class="art"><div class="ph" style="background:linear-gradient(135deg,#3D8BFF,#2B4FE0)">⟲</div></div>
       <div><div style="font-weight:700">Recently Played</div><div class="sub">Your last 50 plays</div></div>
     </button>
+    <div class="head" style="margin:20px 0 4px"><h2 style="margin:0">Playlists</h2><button class="btn sec press" data-act="newPl" style="padding:8px 14px;font-size:13px">＋ New</button></div>
+    <div id="plList"></div>
+    <div style="height:14px"></div>
     <button class="lib press" data-act="settings">
       <div class="art"><div class="ph" style="background:linear-gradient(135deg,#555,#333)">⚙</div></div>
       <div><div style="font-weight:700">Settings &amp; Update</div><div class="sub" id="verLine">Check for updates</div></div>
@@ -256,6 +269,7 @@ nav button.on{color:var(--tx)}
   <button class="btn" style="width:100%;margin:10px 0 6px;padding:15px" data-act="checkUpdate">⟳ Check for updates</button>
   <div class="sub" style="text-align:center;margin-bottom:14px">Most updates install instantly, with no download needed.</div>
   <div class="setrow"><span class="l">Version</span><span class="r" id="setVer"></span></div>
+  <button class="setrow" data-act="toggleAuto"><span class="l">Autoplay similar songs</span><span class="r" id="autoState">On</span></button>
   <button class="setrow" data-act="clearCache"><span class="l">Refresh music lists</span><span class="r">Clear saved lists</span></button>
   <button class="setrow" data-act="clearRecent"><span class="l">Clear recently played</span><span class="r">›</span></button>
   <div class="setrow" style="display:block"><div class="l">About</div><div class="r" style="margin-top:4px;line-height:1.5">Tarang plays free, legal music from Audius, Jamendo, ccMixter, Wikimedia and the Internet Archive (albums and live concerts), live radio from Radio Browser, and music files on your phone. FLAC and WAV files play in full lossless quality.</div></div>
@@ -279,7 +293,7 @@ nav button.on{color:var(--tx)}
 </nav>
 
 <!-- FULL PLAYER -->
-<div id="full">
+<div id="full"><div class="player">
   <div class="top">
     <button class="ib" data-act="closeFull"><svg viewBox="0 0 24 24"><path d="M7.4 8.6L12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg></button>
     <div class="sub" id="fSrc">Now playing</div>
@@ -299,8 +313,15 @@ nav button.on{color:var(--tx)}
     <button class="ib" data-act="next"><svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zm10-12v12h2V6z"/></svg></button>
     <button class="ib sm" id="bRep" data-act="repeat"><svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg><span class="one" id="rOne"></span></button>
   </div>
-  <div class="spacer"></div>
-  <div class="sub" id="fQual" style="text-align:center"></div>
+  <div class="spacer" style="min-height:14px"></div>
+  <div style="display:flex;justify-content:center;gap:10px">
+    <button class="btn sec press" data-act="curAddPl" style="padding:9px 14px;font-size:13px">＋ Add to playlist</button>
+    <button class="btn sec press" data-act="curMore" style="padding:9px 14px;font-size:13px">⋯ More</button>
+  </div>
+  <div class="sub" id="fQual" style="text-align:center;margin-top:10px"></div>
+  </div>
+  <div id="recs"></div>
+  <div style="height:30px"></div>
 </div>
 
 <!-- QUEUE -->
@@ -319,7 +340,7 @@ nav button.on{color:var(--tx)}
 
 <script>
 "use strict";
-const UI_VERSION = 4;
+const UI_VERSION = 5;
 /* ================= helpers ================= */
 const $ = id => document.getElementById(id);
 const AUD = "https://api.audius.co/v1";
@@ -330,6 +351,7 @@ const IC = {
   pause:'<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>',
   heart:'<svg viewBox="0 0 24 24"><path d="M12 21l-1.45-1.32C5.4 15 2 11.9 2 8.1 2 5 4.4 2.6 7.5 2.6c1.74 0 3.41.81 4.5 2.09A6 6 0 0 1 16.5 2.6C19.6 2.6 22 5 22 8.1c0 3.8-3.4 6.9-8.55 11.6z"/></svg>',
   heartO:'<svg viewBox="0 0 24 24"><path d="M16.5 2.6c-1.74 0-3.41.81-4.5 2.09A6 6 0 0 0 7.5 2.6C4.4 2.6 2 5 2 8.1c0 3.8 3.4 6.9 8.55 11.6L12 21l1.45-1.32C18.6 15 22 11.9 22 8.1 22 5 19.6 2.6 16.5 2.6zm-4.4 15.6l-.1.1-.1-.1C7.14 13.9 4 11 4 8.1 4 6.1 5.5 4.6 7.5 4.6c1.54 0 3.04 1 3.57 2.36h1.87C13.46 5.6 14.96 4.6 16.5 4.6c2 0 3.5 1.5 3.5 3.5 0 2.9-3.14 5.8-7.9 10.1z"/></svg>',
+  more:'<svg viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>',
   x:'<svg viewBox="0 0 24 24"><path d="M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg>'
 };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -375,15 +397,20 @@ async function rb(path){
 function fromAudius(t){
   const art = t.artwork ? (t.artwork["480x480"] || t.artwork["150x150"] || t.artwork["1000x1000"] || "") : "";
   return { id:"au:"+t.id, title:t.title||"Untitled", artist:t.user ? t.user.name : "", art,
-    url:`${AUD}/tracks/${t.id}/stream?${APP}`, src:"audius", dur:(t.duration||0)*1000 };
+    url:`${AUD}/tracks/${t.id}/stream?${APP}`, src:"audius", dur:(t.duration||0)*1000,
+    uid:t.user ? t.user.id : "", genre:t.genre||"", mood:t.mood||"", tags:(t.tags||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,5),
+    year:String(t.release_date||t.created_at||"").slice(0,4) };
 }
 function fromStation(s){
   let fav = (s.favicon||"").trim(); if (fav && !/^https?:/.test(fav)) fav = "";
   return { id:"rb:"+s.stationuuid, title:(s.name||"Station").trim(),
     artist:[s.country, s.codec && s.bitrate ? s.codec+" "+s.bitrate+"k" : s.codec].filter(Boolean).join(" · "),
-    art:fav, url:s.url_resolved || s.url, src:"radio", dur:0, bitrate:s.bitrate||0, codec:s.codec||"" };
+    art:fav, url:s.url_resolved || s.url, src:"radio", dur:0, bitrate:s.bitrate||0, codec:s.codec||"",
+    tags:String(s.tags||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,5), lang:String(s.language||"").split(",")[0], country:s.countrycode||"" };
 }
-const slim = t => ({id:t.id,title:t.title,artist:t.artist,art:t.art,url:t.url,src:t.src,dur:t.dur||0,bitrate:t.bitrate||0,codec:t.codec||""});
+const slim = t => { const o = {id:t.id,title:t.title,artist:t.artist,art:t.art,url:t.url,src:t.src,dur:t.dur||0};
+  for (const k of ["bitrate","codec","uid","genre","mood","tags","year","ident","lang","country","creator"]) if (t[k] && (!Array.isArray(t[k]) || t[k].length)) o[k] = t[k];
+  return o; };
 
 let liked    = load("liked", []);
 let local    = load("local", []);
@@ -415,6 +442,7 @@ function renderList(el, tracks, opts={}){
       </div>
       <button class="ib ${isLiked(t.id)?"liked":""}" data-act="like" data-k="${k}" data-i="${i}">${isLiked(t.id)?IC.heart:IC.heartO}</button>
       ${opts.removable ? `<button class="ib" data-act="remove" data-w="${opts.removable}" data-id="${esc(t.id)}" style="color:var(--mut)">${IC.x}</button>` : ""}
+      <button class="ib" data-act="more" data-k="${k}" data-i="${i}" data-pl="${esc(opts.pl||"")}" style="color:var(--mut);width:34px">${IC.more}</button>
     </div>`).join("");
 }
 function renderRow(el, tracks){
@@ -432,19 +460,20 @@ function markNow(){
 /* ================= playback ================= */
 function playTracks(arr, i){
   if (!arr || !arr.length) return;
+  arr.forEach(t => recPool.set(t.id, t));
   queue = arr.slice(0, 300).map(slim);
   const t = queue[i] || queue[0];
   state.id = t.id; state.title=t.title; state.artist=t.artist; state.art=t.art; state.playing=true; state.buffering=true; state.pos=0; state.dur=t.dur||0;
   nat("playQueue", JSON.stringify(queue.map(q=>({id:q.id,title:q.title,artist:q.artist,art:q.art,url:q.url}))), i);
   if (!N) toast("Playback works inside the Tarang app");
-  addRecent(t); renderPlayer(true); markNow();
+  addRecent(t); renderPlayer(true); markNow(); onTrackChange();
 }
 function addRecent(t){
   if (!t || !t.url) return;
   recent = [slim(t), ...recent.filter(x=>x.id!==t.id)].slice(0,50); save("recent", recent);
 }
 function trackById(id){
-  return queue.find(t=>t.id===id) || recent.find(t=>t.id===id) || liked.find(t=>t.id===id) || stations.find(t=>t.id===id) || local.find(t=>t.id===id);
+  return recPool.get(id) || queue.find(t=>t.id===id) || recent.find(t=>t.id===id) || liked.find(t=>t.id===id) || stations.find(t=>t.id===id) || local.find(t=>t.id===id);
 }
 function currentTrack(){
   if (!state.id) return null;
@@ -457,14 +486,15 @@ window.onNativeState = function(s){
   const wasPlaying = state.playing;
   Object.assign(state, s);
   stamp = performance.now();
-  if (changed){ const t = trackById(s.id); if (t) addRecent(t); markNow(); }
+  if (changed){ const t = trackById(s.id); if (t) addRecent(t); markNow(); onTrackChange(); }
+  maybeAutoplay();
   renderPlayer(changed);
   if (wasPlaying !== state.playing) document.body.classList.toggle("paused", !state.playing);
 };
 window.onNativeQueue = function(items){
   if (!items || !items.length) return;
   // keep full info for items we know about
-  queue = items.map(it => trackById(it.id) ? slim(trackById(it.id)) : it);
+  queue = items.map(it => { const k = trackById(it.id) || recPool.get(it.id); return k ? slim(k) : it; });
   if ($("queue").classList.contains("on")) renderQueue();
 };
 
@@ -546,19 +576,19 @@ function setLike(t, on){
 }
 
 /* ================= overlays ================= */
-const openFull = () => { $("full").classList.add("on"); renderPlayer(true); };
+const openFull = () => { $("full").classList.add("on"); $("full").scrollTop = 0; renderPlayer(true); renderRecs(); };
 const closeFull = () => $("full").classList.remove("on");
 function renderQueue(){
   const el = $("qList");
   if (!queue.length){ el.innerHTML = '<div class="empty">Queue is empty.</div>'; return; }
-  el.innerHTML = queue.map((t,i)=>`<div class="it ${t.id===state.id?"now":""}" data-id="${esc(t.id)}" data-act="jump" data-i="${i}">${artHTML(t)}<div class="meta"><div class="t"><span class="eq"><i></i><i></i><i></i></span>${esc(t.title)}</div><div class="a">${esc(t.artist||"")}</div></div></div>`).join("");
+  el.innerHTML = queue.map((t,i)=>`<div class="it ${t.id===state.id?"now":""}" data-id="${esc(t.id)}"><div data-act="jump" data-i="${i}" style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">${artHTML(t)}<div class="meta"><div class="t"><span class="eq"><i></i><i></i><i></i></span>${esc(t.title)}</div><div class="a">${esc(t.artist||"")}</div></div></div>${(N&&N.removeAt&&t.id!==state.id)?`<button class="ib" data-act="qRemove" data-i="${i}" style="color:var(--mut)">${IC.x}</button>`:""}</div>`).join("");
   const now = el.querySelector(".now"); if (now) now.scrollIntoView({block:"center"});
 }
 const openQueue = () => { renderQueue(); $("queue").classList.add("on"); };
 const closeQueue = () => $("queue").classList.remove("on");
 let openPageId = null;
 function openPage(id){ openPageId = id; $(id).scrollTop = 0; $(id).classList.add("on"); }
-function closePage(){ if (openPageId){ $(openPageId).classList.remove("on"); openPageId = null; } }
+function closePage(){ if (openPageId){ $(openPageId).classList.remove("on"); openPageId = null; } curPl = null; }
 function openSheet(html){ $("sheet").innerHTML = html; $("sheet").classList.add("on"); $("sheetBg").classList.add("on"); }
 function closeSheet(){ $("sheet").classList.remove("on"); $("sheetBg").classList.remove("on"); }
 const sheetOpen = () => $("sheet").classList.contains("on");
@@ -575,7 +605,7 @@ window.onBack = function(){
 (function(){ let y0=null, x0=0; const f=$("full");
   f.addEventListener("touchstart", e=>{ if (e.target.closest("#seek")) { y0=null; return; } y0=e.touches[0].clientY; x0=e.touches[0].clientX; }, {passive:true});
   f.addEventListener("touchend", e=>{ if(y0===null) return; const dy=e.changedTouches[0].clientY-y0, dx=e.changedTouches[0].clientX-x0;
-    if (dy>110 && Math.abs(dx)<80) closeFull();
+    if (dy>110 && Math.abs(dx)<80 && f.scrollTop <= 0) closeFull();
     else if (Math.abs(dx)>90 && Math.abs(dy)<60 && e.target.closest("#fArt")) nat(dx<0?"next":"prev");
     y0=null; });
 })();
@@ -632,6 +662,31 @@ document.addEventListener("click", e => {
     case "installApk": startApkInstall(); break;
     case "applyUi": applyUi(+el.dataset.v); break;
     case "clearCache": Object.keys(localStorage).filter(k=>k.startsWith("c:")).forEach(k=>localStorage.removeItem(k)); for (const k in memCache) delete memCache[k]; toast("Lists will refresh"); loadTrending(); loadGenre(); $("radioList").dataset.loaded=""; break;
+    case "more": { const t = item(); if (t) trackMenu(t, el.dataset.pl); break; }
+    case "curMore": { const t = currentTrack(); if (t) trackMenu(t, ""); break; }
+    case "curAddPl": { const t = currentTrack(); if (t) addToPlaylistSheet(t); break; }
+    case "mPlayNext": queueAdd(menuTrack, true); closeSheet(); break;
+    case "mQueue": queueAdd(menuTrack, false); closeSheet(); break;
+    case "mAddPl": addToPlaylistSheet(menuTrack); break;
+    case "mLike": setLike(menuTrack, !isLiked(menuTrack.id)); closeSheet(); break;
+    case "mArtist": closeSheet(); closeFull(); goArtist(menuTrack); break;
+    case "mRadio": closeSheet(); songRadio(menuTrack); break;
+    case "mPlRemove": plRemoveTrack(el.dataset.pl, menuTrack.id); closeSheet(); break;
+    case "mPlUp": plMove(el.dataset.pl, menuTrack.id, -1); closeSheet(); break;
+    case "mPlDown": plMove(el.dataset.pl, menuTrack.id, 1); closeSheet(); break;
+    case "pickPl": plAdd(el.dataset.pl, pendingAdd); closeSheet(); break;
+    case "newPl": newPlaylistSheet(null); break;
+    case "newPlWith": newPlaylistSheet(pendingAdd); break;
+    case "savePl": savePlaylistFromSheet(); break;
+    case "openPl": openPlaylist(el.dataset.pl); break;
+    case "plPlay": { const pl = getPl(el.dataset.pl); if (pl && pl.tracks.length){ const d = pl.tracks.slice(); if (el.dataset.s==="1") for (let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } playTracks(d,0); } break; }
+    case "plRename": renamePlaylistSheet(el.dataset.pl); break;
+    case "plDelete": deletePlaylistSheet(el.dataset.pl); break;
+    case "plDeleteYes": deletePlaylist(el.dataset.pl); closeSheet(); break;
+    case "saveRename": renamePlaylist(el.dataset.pl); break;
+    case "recPlay": { const l = lists.get(el.dataset.k); if (l) { if (el.dataset.mode==="next") queueAdd(l[+el.dataset.i], true); else playTracks(l, +el.dataset.i); } break; }
+    case "qRemove": nat("removeAt", +el.dataset.i); queue.splice(+el.dataset.i,1); renderQueue(); break;
+    case "toggleAuto": autoplayOn = !autoplayOn; save("autoplay", autoplayOn); $("autoState").textContent = autoplayOn?"On":"Off"; toast(autoplayOn?"Autoplay on":"Autoplay off"); break;
     case "album": openAlbum(el.dataset.ident, el.dataset.name); break;
     case "artist": openArtist(el.dataset.uid, el.dataset.name); break;
     case "playShuf": { const l = lists.get(el.dataset.k); if (l){ const d=l.slice(); for (let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; } playTracks(d,0); } break; }
@@ -736,7 +791,8 @@ const OV = "https://api.openverse.org/v1/audio/";
 const OV_SRC = "jamendo,ccmixter,wikimedia_audio";
 function fromOpenverse(r){
   return { id:"ov:"+r.id, title:(r.title||"Untitled").replace(/\.(mp3|ogg|wav|flac)$/i,""), artist:r.creator||"",
-    art:r.thumbnail||"", url:r.url, src:r.source||"jamendo", dur:r.duration||0 };
+    art:r.thumbnail||"", url:r.url, src:r.source||"jamendo", dur:r.duration||0, creator:r.creator||"",
+    tags:[...(r.genres||[]), ...((r.tags||[]).map(x=>x.name||x))].filter(x=>typeof x==="string" && x.length>2 && !/^\d+$/.test(x)).slice(0,5) };
 }
 async function ovSearch(q, size=20){
   const j = await getJSON(`${OV}?q=${encodeURIComponent(q)}&category=music&source=${OV_SRC}&page_size=${size}&mature=false`, 12000);
@@ -774,8 +830,9 @@ async function openAlbum(ident, name){
     if (!best) best = files.filter(x=>/\.(mp3|ogg|flac)$/i.test(x.name||""));
     best.sort((a,b)=> (parseInt(a.track)||0)-(parseInt(b.track)||0) || String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
     const art = `https://archive.org/services/img/${encodeURIComponent(ident)}`;
+    const year = String(md.year || md.date || "").slice(0,4);
     const d = best.map((f,i)=>({ id:`ia:${ident}/${f.name}`, title:(f.title || f.name.replace(/\.[^.]+$/,"").replace(/[_]+/g," ")),
-      artist:f.creator || artist, art, src:"archive", dur:Math.round((parseFloat(f.length)||0)*1000) || 0,
+      artist:f.creator || artist, art, src:"archive", dur:Math.round((parseFloat(f.length)||0)*1000) || 0, ident, year, creator:artist,
       url:`https://archive.org/download/${encodeURIComponent(ident)}/${f.name.split("/").map(encodeURIComponent).join("/")}` }));
     if (d.length){
       const k = regList(d);
@@ -912,6 +969,7 @@ async function loadRadio(){
 
 /* ================= library ================= */
 function updateLibCounts(){
+  renderPlaylists();
   $("likedCount").textContent = liked.length + (liked.length===1?" song":" songs");
   $("localCount").textContent = local.length ? local.length + (local.length===1?" file":" files") : "Add your own music files (FLAC, MP3…)";
   $("stCount").textContent = stations.length + (stations.length===1?" station":" stations");
@@ -951,7 +1009,7 @@ window.onLocalFiles = function(files){
 
 /* ================= settings & updates ================= */
 function versionText(){ return `App ${nat("appVersion") || "?"} · Screens ${UI_VERSION}`; }
-function openSettings(){ $("setVer").textContent = versionText(); openPage("setPage"); }
+function openSettings(){ $("setVer").textContent = versionText(); $("autoState").textContent = autoplayOn?"On":"Off"; openPage("setPage"); }
 let bannerAction = null;
 function showBanner(text, action){ $("bannerTxt").textContent = text; bannerAction = () => { $("banner").classList.remove("on"); action(); }; $("banner").classList.add("on"); }
 function manualUpdate(){
@@ -988,6 +1046,216 @@ function checkCrash(){
     openSheet(`<h3>Sorry, Tarang closed last time</h3><p>Copy this report and send it to Claude so it can be fixed.</p><pre id="crashTxt">${esc(c)}</pre><button class="btn" style="width:100%" data-act="copyCrash">Copy report</button>`);
   }
 }
+
+/* ================= recommendations ================= */
+const recPool = new Map();          // id -> track (so queue items keep full info)
+const recCache = new Map();         // track id -> {sections, auto}
+let autoplayOn = load("autoplay", true);
+let appVisible = true;
+window.onAppVisible = v => { appVisible = v; };
+const hasQueueApi = () => !!(N && N.addToQueue);
+function uniq(arr, exclude){ const seen = new Set(exclude||[]); return arr.filter(t => t && t.url && !seen.has(t.id) && seen.add(t.id)); }
+function mix(...lists){ const out=[]; const m=Math.max(0,...lists.map(l=>l.length)); for(let i=0;i<m;i++) for(const l of lists) if(l[i]) out.push(l[i]); return out; }
+async function auTracks(url){ try { return ((await getJSON(url)).data||[]).map(fromAudius); } catch(e){ return []; } }
+
+async function buildRecs(t){
+  if (recCache.has(t.id)) return recCache.get(t.id);
+  const sec = []; let auto = [];
+  const ex = [t.id];
+  if (t.src === "audius"){
+    const [byArtist, byGenre, byTag] = await Promise.all([
+      t.uid ? auTracks(`${AUD}/users/${encodeURIComponent(t.uid)}/tracks?limit=20&sort=plays&${APP}`) : [],
+      t.genre ? auTracks(`${AUD}/tracks/trending?genre=${encodeURIComponent(t.genre)}&time=month&limit=30&${APP}`) : [],
+      (t.tags&&t.tags[0]) || t.mood ? auTracks(`${AUD}/tracks/search?query=${encodeURIComponent((t.tags&&t.tags[0]) || t.mood)}&limit=25&${APP}`) : []
+    ]);
+    const a = uniq(byArtist, ex), g = uniq(byGenre.filter(x=>x.uid!==t.uid), ex), m = uniq(byTag.filter(x=>x.uid!==t.uid), ex);
+    if (m.length || g.length) sec.push({title:"Similar songs", tracks:uniq(mix(m, g), ex).slice(0,20)});
+    if (a.length) sec.push({title:`More from ${t.artist}`, tracks:a.slice(0,20)});
+    if (t.year){ const same = uniq([...byGenre, ...byTag].filter(x=>x.year===t.year), ex); if (same.length >= 3) sec.push({title:`Also from ${t.year}`, tracks:same.slice(0,20)}); }
+    auto = uniq(mix(m, g, a), ex);
+  } else if (SRC_LABEL[t.src] && t.src !== "archive"){
+    const tag = (t.tags&&t.tags[0]) || "";
+    const [byCreator, byTag] = await Promise.all([
+      t.creator ? getJSON(`${OV}?creator=${encodeURIComponent(t.creator)}&category=music&source=${OV_SRC}&page_size=20`).then(j=>(j.results||[]).filter(r=>r.url).map(fromOpenverse)).catch(()=>[]) : [],
+      tag ? ovSearch(tag, 20).catch(()=>[]) : (t.title ? ovSearch(qTokens(t.title).slice(0,2).join(" "), 20).catch(()=>[]) : [])
+    ]);
+    const c = uniq(byCreator, ex), g = uniq(byTag, ex);
+    if (g.length) sec.push({title: tag ? `Similar · ${tag}` : "Similar songs", tracks:g});
+    if (c.length) sec.push({title:`More from ${t.artist}`, tracks:c});
+    auto = uniq(mix(g, c), ex);
+  } else if (t.src === "archive"){
+    const [album, byCreator, sameYear] = await Promise.all([
+      t.ident ? iaAlbumTracks(t.ident).catch(()=>[]) : [],
+      t.creator ? iaSearch(`creator:("${t.creator.replace(/"/g,"")}")`, 15).catch(()=>[]) : [],
+      t.year ? iaSearch(`year:${t.year}`, 15).catch(()=>[]) : []
+    ]);
+    const al = uniq(album, ex);
+    if (al.length) sec.push({title:"More from this album", tracks:al});
+    const ca = byCreator.filter(x=>x.ident!==t.ident), ya = sameYear.filter(x=>x.ident!==t.ident);
+    if (ca.length) sec.push({title:`More from ${t.creator}`, albums:ca});
+    if (ya.length) sec.push({title:`Albums from ${t.year}`, albums:ya});
+    auto = al;
+  } else if (t.src === "radio"){
+    const tag = (t.tags&&t.tags[0]) || "";
+    const path = tag ? `stations/search?tag=${encodeURIComponent(tag)}&hidebroken=true&order=clickcount&reverse=true&limit=25`
+               : t.lang ? `stations/search?language=${encodeURIComponent(t.lang)}&hidebroken=true&order=clickcount&reverse=true&limit=25` : "";
+    if (path){ const st = uniq((await rb(path).catch(()=>[])).filter(s=>s.url_resolved||s.url).map(fromStation), ex); if (st.length) sec.push({title:"Similar stations", tracks:st}); }
+  } else if (t.src === "local"){
+    const l = uniq(local, ex); if (l.length) sec.push({title:"More from your phone", tracks:l}); auto = l;
+  }
+  sec.forEach(x => (x.tracks||[]).forEach(tr => recPool.set(tr.id, tr)));
+  auto.forEach(tr => recPool.set(tr.id, tr));
+  const res = {sections:sec, auto};
+  recCache.set(t.id, res); if (recCache.size > 40) recCache.delete(recCache.keys().next().value);
+  return res;
+}
+async function iaAlbumTracks(ident){
+  const m = await getJSON(`https://archive.org/metadata/${encodeURIComponent(ident)}`, 15000);
+  const md = m.metadata || {}; const artist = Array.isArray(md.creator) ? md.creator[0] : (md.creator || "");
+  const files = m.files||[]; const pref = ["VBR MP3","320Kbps MP3","MP3","256Kbps MP3","Ogg Vorbis","Flac"];
+  let best = null; for (const f of pref){ const got = files.filter(x=>x.format===f); if (got.length){ best = got; break; } }
+  if (!best) best = files.filter(x=>/\.(mp3|ogg|flac)$/i.test(x.name||""));
+  best.sort((a,b)=> (parseInt(a.track)||0)-(parseInt(b.track)||0) || String(a.name).localeCompare(String(b.name), undefined, {numeric:true}));
+  const art = `https://archive.org/services/img/${encodeURIComponent(ident)}`, year = String(md.year||md.date||"").slice(0,4);
+  return best.map(f=>({ id:`ia:${ident}/${f.name}`, title:(f.title || f.name.replace(/\.[^.]+$/,"").replace(/_+/g," ")), artist:f.creator||artist, art, src:"archive",
+    dur:Math.round((parseFloat(f.length)||0)*1000)||0, ident, year, creator:artist,
+    url:`https://archive.org/download/${encodeURIComponent(ident)}/${f.name.split("/").map(encodeURIComponent).join("/")}` }));
+}
+let recFor = "";
+async function onTrackChange(){
+  const t = currentTrack(); if (!t) return;
+  recFor = t.id;
+  await buildRecs(t).catch(()=>null);
+  if (recFor === t.id){ renderRecs(); maybeAutoplay(); }
+}
+function renderRecs(){
+  const el = $("recs"); const t = currentTrack();
+  if (!t){ el.innerHTML = ""; return; }
+  const r = recCache.get(t.id);
+  if (!r){ el.innerHTML = `<div class="recsec"><h2>Recommended for you</h2><div class="row">${'<div class="skel c" style="width:120px;height:160px"></div>'.repeat(3)}</div></div>`; return; }
+  if (!r.sections.length){ el.innerHTML = ""; return; }
+  el.innerHTML = r.sections.map(sx => {
+    if (sx.albums) return `<div class="recsec"><h2>${esc(sx.title)}</h2><div class="row">${sx.albums.map(a=>`<div class="card press" data-act="album" data-ident="${esc(a.ident)}" data-name="${esc(a.title)}">${artHTML(a)}<div class="t">${esc(a.title)}</div><div class="a">${esc(a.artist)}</div></div>`).join("")}</div></div>`;
+    const k = regList(sx.tracks);
+    return `<div class="recsec"><h2>${esc(sx.title)}</h2><div class="row">${sx.tracks.map((x,i)=>`<div class="card press" data-act="recPlay" data-k="${k}" data-i="${i}">${artHTML(x)}<div class="t">${esc(x.title)}</div><div class="a">${esc(x.artist)}</div></div>`).join("")}</div></div>`;
+  }).join("");
+}
+const autoAdded = new Set();
+let fallbackFired = "";
+function maybeAutoplay(){
+  if (!autoplayOn || !state.id) return;
+  const t = currentTrack(); if (!t || t.src === "radio") return;
+  const r = recCache.get(t.id); if (!r || !r.auto.length) return;
+  const remaining = (state.count||0) - (state.index||0) - 1;
+  if (hasQueueApi()){
+    if (remaining >= 2 || autoAdded.has(t.id)) return;
+    const inQ = new Set(queue.map(q=>q.id));
+    const add = r.auto.filter(x=>!inQ.has(x.id)).slice(0, 10);
+    if (!add.length) return;
+    autoAdded.add(t.id);
+    queue.push(...add.map(slim));
+    nat("addToQueue", JSON.stringify(add.map(q=>({id:q.id,title:q.title,artist:q.artist,art:q.art,url:q.url}))));
+  } else {
+    // older app engine: start suggestions when the queue finishes
+    const ended = !state.playing && !state.buffering && remaining <= 0 && state.dur > 0 && state.pos >= state.dur - 2500 && state.repeat === 0;
+    if (ended && fallbackFired !== t.id){ fallbackFired = t.id; playTracks(r.auto.slice(0, 20), 0); toast("Autoplay: similar songs"); }
+  }
+}
+async function songRadio(t){
+  toast("Starting song radio…");
+  const r = await buildRecs(t).catch(()=>({auto:[]}));
+  playTracks([t, ...r.auto.slice(0, 30)], 0);
+}
+function goArtist(t){
+  if (t.src === "audius" && t.uid) openArtist(t.uid, t.artist);
+  else if (t.src === "archive" && t.ident) openAlbum(t.ident, t.artist || "Album");
+  else if (t.artist){ show("search"); $("q").value = t.artist; doSearch(); }
+}
+function queueAdd(t, next){
+  if (!t || !t.url){ toast("Can't add this one"); return; }
+  if (!state.id){ playTracks([t], 0); return; }
+  if (!hasQueueApi()){ toast("Install the app update to use the queue"); return; }
+  recPool.set(t.id, t);
+  const payload = JSON.stringify([{id:t.id,title:t.title,artist:t.artist,art:t.art,url:t.url}]);
+  if (next){ nat("playNext", payload); queue.splice((state.index||0)+1, 0, slim(t)); toast("Playing next"); }
+  else { nat("addToQueue", payload); queue.push(slim(t)); toast("Added to queue"); }
+}
+
+/* ================= track menu ================= */
+let menuTrack = null, pendingAdd = null;
+function trackMenu(t, plId){
+  menuTrack = t;
+  const lk = isLiked(t.id), radio = t.src === "radio";
+  const pl = plId ? `<button data-act="mPlUp" data-pl="${esc(plId)}"><span>↑</span>Move up</button><button data-act="mPlDown" data-pl="${esc(plId)}"><span>↓</span>Move down</button><button data-act="mPlRemove" data-pl="${esc(plId)}"><span>✕</span>Remove from this playlist</button>` : "";
+  openSheet(`<div class="mtrack">${artHTML(t)}<div style="min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.title)}</div><div class="sub">${esc(t.artist||"")}</div></div></div>
+  <div class="menu">
+    ${radio ? "" : `<button data-act="mPlayNext"><span>⏭</span>Play next</button><button data-act="mQueue"><span>☰</span>Add to queue</button>`}
+    <button data-act="mAddPl"><span>＋</span>Add to playlist</button>
+    <button data-act="mLike"><span>${lk?"♥":"♡"}</span>${lk ? "Remove from "+(radio?"saved stations":"Liked Songs") : (radio?"Save station":"Add to Liked Songs")}</button>
+    ${radio ? "" : `<button data-act="mRadio"><span>📻</span>Start song radio (similar songs)</button><button data-act="mArtist"><span>👤</span>${t.src==="archive"?"Go to album":"Go to artist"}</button>`}
+    ${pl}
+  </div>`);
+}
+
+/* ================= playlists ================= */
+let playlists = load("playlists", []);
+const savePls = () => save("playlists", playlists);
+const getPl = id => playlists.find(p=>p.id===id);
+function plCover(p){ const t = p.tracks.find(x=>x.art); return t ? {title:p.name, art:t.art} : {title:p.name, art:""}; }
+function renderPlaylists(){
+  const el = $("plList"); if (!el) return;
+  if (!playlists.length){ el.innerHTML = `<div class="sub" style="padding:8px 0 4px">No playlists yet. Tap “＋ New” or use ⋯ on any song.</div>`; return; }
+  el.innerHTML = playlists.map(p=>`<button class="plrow press" data-act="openPl" data-pl="${esc(p.id)}">${artHTML(plCover(p))}<div style="min-width:0"><div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div><div class="sub">${p.tracks.length} ${p.tracks.length===1?"song":"songs"}</div></div></button>`).join("");
+}
+function addToPlaylistSheet(t){
+  pendingAdd = t;
+  openSheet(`<h3>Add to playlist</h3>
+  <div class="menu"><button data-act="newPlWith"><span>＋</span>New playlist</button>
+  ${playlists.map(p=>`<button data-act="pickPl" data-pl="${esc(p.id)}"><span>♫</span>${esc(p.name)} <span class="sub" style="width:auto;font-size:12px;margin-left:auto">${p.tracks.length}</span></button>`).join("")}</div>`);
+}
+function newPlaylistSheet(withTrack){
+  pendingAdd = withTrack;
+  openSheet(`<h3>New playlist</h3><input class="sheetin" id="plName" placeholder="Playlist name" maxlength="60"><button class="btn" style="width:100%" data-act="savePl">Create</button>`);
+  setTimeout(()=>{ const i=$("plName"); if(i){ i.focus(); i.addEventListener("keydown", e=>{ if(e.key==="Enter") savePlaylistFromSheet(); }); } }, 250);
+}
+function savePlaylistFromSheet(){
+  const name = ($("plName").value||"").trim() || `My playlist ${playlists.length+1}`;
+  const p = {id:"pl"+Date.now().toString(36), name, tracks:[], created:Date.now()};
+  playlists.unshift(p);
+  if (pendingAdd && pendingAdd.url) p.tracks.push(slim(pendingAdd));
+  savePls(); closeSheet(); renderPlaylists();
+  toast(pendingAdd ? `Added to “${name}”` : `Created “${name}”`); pendingAdd = null;
+}
+function plAdd(id, t){
+  const p = getPl(id); if (!p || !t) return;
+  if (!t.url){ toast("Can't add this one"); return; }
+  if (p.tracks.some(x=>x.id===t.id)){ toast("Already in this playlist"); return; }
+  p.tracks.push(slim(t)); savePls(); renderPlaylists(); toast(`Added to “${p.name}”`);
+  if (curPl === id) openPlaylist(id);
+}
+function plRemoveTrack(id, tid){ const p = getPl(id); if (!p) return; p.tracks = p.tracks.filter(x=>x.id!==tid); savePls(); renderPlaylists(); openPlaylist(id); toast("Removed"); }
+function plMove(id, tid, dir){
+  const p = getPl(id); if (!p) return; const i = p.tracks.findIndex(x=>x.id===tid), j = i+dir;
+  if (i<0 || j<0 || j>=p.tracks.length) return;
+  [p.tracks[i], p.tracks[j]] = [p.tracks[j], p.tracks[i]]; savePls(); openPlaylist(id);
+}
+let curPl = null;
+function openPlaylist(id){
+  const p = getPl(id); if (!p) return; curPl = id; libOpen = null;
+  $("libTitle").textContent = p.name;
+  $("libBtns").innerHTML = (p.tracks.length ? `<button class="btn press" data-act="plPlay" data-pl="${esc(id)}" data-s="0">▶ Play</button><button class="btn sec press" data-act="plPlay" data-pl="${esc(id)}" data-s="1">⤨ Shuffle</button>` : "") +
+    `<button class="btn sec press" data-act="plRename" data-pl="${esc(id)}">✎ Rename</button><button class="btn sec press" data-act="plDelete" data-pl="${esc(id)}" style="color:#ff7b7b">Delete</button>`;
+  renderList($("libList"), p.tracks, {empty:"This playlist is empty.<br>Tap ⋯ on any song → Add to playlist.", pl:id});
+  if (openPageId !== "libPage") openPage("libPage");
+}
+function renamePlaylistSheet(id){
+  const p = getPl(id); if (!p) return;
+  openSheet(`<h3>Rename playlist</h3><input class="sheetin" id="plName" value="${esc(p.name)}" maxlength="60"><button class="btn" style="width:100%" data-act="saveRename" data-pl="${esc(id)}">Save</button>`);
+  setTimeout(()=>{ const i=$("plName"); if(i) i.focus(); }, 250);
+}
+function renamePlaylist(id){ const p = getPl(id); if (!p) return; p.name = ($("plName").value||"").trim() || p.name; savePls(); closeSheet(); renderPlaylists(); openPlaylist(id); }
+function deletePlaylistSheet(id){ const p = getPl(id); if (!p) return; openSheet(`<h3>Delete “${esc(p.name)}”?</h3><p>The songs stay available; only this playlist is removed.</p><button class="btn" style="width:100%;background:#E53935" data-act="plDeleteYes" data-pl="${esc(id)}">Delete playlist</button>`); }
+function deletePlaylist(id){ playlists = playlists.filter(p=>p.id!==id); savePls(); renderPlaylists(); closePage(); curPl = null; toast("Playlist deleted"); }
 
 /* ================= start ================= */
 greet(); renderGenres(); renderLangs(); updateLibCounts(); renderRecentRow();
